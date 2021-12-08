@@ -1,0 +1,323 @@
+---
+title: "ADA Data Analysis"
+output:
+  html_document: default
+  pdf_document: default
+---
+### All Data is taken from the 2021 and 2020 County Health Rankings
+
+### Stata Code for County Data
+``` {r}
+# import delimited "/Users/nkolesky/Desktop/ADA/revised_county_health.csv", encoding(UTF-8) 
+# replace obe_21=0 if obe_21<=33
+# replace obe_21=1 if obe_21>33
+# drop if obe_21==.
+# drop if fei_20==.
+# drop if pi_20==.
+# drop if aeo_20==.
+# drop if uni_20==.
+# drop if ieq_20==.
+# save "/Users/nkolesky/Desktop/ADA/usa_county_health_dichot.dta"
+```
+
+### Stata Code for State Data
+``` {r}
+# import delimited "/Users/nkolesky/Desktop/state_data.csv", varnames(1) encoding(UTF-8) 
+# encode county, generate(substate)
+# drop county
+# keep if substate ==.
+# save "/Users/nkolesky/Desktop/ADA/state_data.dta"
+```
+
+### Uploading County Stata .dta file
+```{r}
+#library(haven)
+#usa_county_health_dichot <- read_dta("Desktop/ADA/usa_county_health_dichot.dta") 
+#View(usa_county_health_dichot)
+```
+
+### Uploading State Stata .dta file
+```{r}
+#library(haven)
+#state_data <- read_dta("Desktop/ADA/state_data.dta")
+#View(state_data)
+```
+
+### Uploading County Non-dichot .dta file
+```{r}
+#library(haven)
+#county_health_data <- read_dta("Desktop/ADA/county_health_data.dta")
+#View(county_health_data)
+```
+
+### Read in .csv datasets
+```{r}
+# County Health
+county_health_data <- read.csv("~/Desktop/ADA/county_health_data.csv") #Read
+View(county_health_data) #Verify
+
+#Dichot County Health
+usa_county_health_dichot <- read.csv("~/Desktop/ADA/usa_county_health_dichot.csv") #Read
+View(usa_county_health_dichot) #Verify
+
+#State Level Data
+state_data <- read.csv("~/Desktop/ADA/state_data.csv") #Read
+View(state_data) #Verify
+```
+
+###Load in Packages
+```{r}
+library(arsenal)
+library(beeswarm)
+library(boot)
+library(dpylr)
+library(forcats)
+library(ggbeeswarm)
+library(ggcorrplot)
+library(ggplot2)
+library(graphics)
+library(grDevices)
+library(haven)
+library(htmlTable)
+library(knitr)
+library(methods)
+library(purr)
+library(readr)
+library(scales)
+library(stats)
+library(stringr)
+library(tibble)
+library(tidyr)
+library(tidyverse)
+library(utils)
+library(vipor)
+```
+### Logistic Regression
+```{r}
+obelogit <- glm(obe_21 ~ fei_20 + pi_20 + aeo_20 + uni_20 + ieq_20, data = usa_county_health_dichot, family = "binomial") # Core of the analysis
+
+summary(obelogit) # Print to verify
+confint(obelogit)
+exp(cbind(OR= coef(obelogit), confint(obelogit))) # 95% CI + OR
+
+usa_county_health_dichot$obeprob <- round(fitted(obelogit), 2) #New variable and significant figures
+```
+
+## Tables
+```{r}
+classificationtable <- table(usa_county_health_dichot$obe_21, usa_county_health_dichot$obeprob >.5) 
+classificationtable # Print to verify
+
+sensitivity<-(classificationtable[2,2]/(classificationtable[2,2]+classificationtable[2,1]))*100 # Test the sensitivity of the analysis
+sensitivity # Print to verify
+
+specificity<-(classificationtable[1,1]/(classificationtable[1,1]+classificationtable[1,2]))*100 # Test the specificity of the analysis
+specificity # Print to verify
+
+
+#Table One
+county_health_data$reg <- 
+    factor(county_health_data$reg, 
+           levels=c(1,2,3,4,5),
+           labels=c("West", 
+                   "Southwest", 
+                   "Midwest", 
+                   "Southeast", 
+                   "Northeast"))  ### Establish Labels for the table
+tab1 <- tableby(reg ~ obe_21 + fei_20 + pi_20 + aeo_20 + uni_20 + ieq_20, data=county_health_data) ###Build table
+summary(tab1, text=TRUE) ###Verify
+```
+
+## Plots
+```{r}
+# Forest Plot
+
+datobe <- data.frame(
+Index = c(1, 2, 3, 4, 5),
+label = c("Food Environment Index", "Physical Inactivity (%)", "Access to Exercise Opportunities", "Uninsured (%)", "Income Inequity (80%-20%)"),                          # Establishing Labels
+OR = c(.9583788, 1.0698174, .9959172, .9706844, 1.0241873),  # Odds Ratio
+LL = c(.8856658, 1.0539172, .9923477, .9556166, .9205606),   # Lower Limit
+UL = c(1.0364314, 1.0861376, .9994818, .9859281, 1.1402790), # Upper Limit
+CI = c(".8856658, 1.0364314", "1.0539172, 1.0861376", ".9923477, .9994818", ".9556166, .9859281", ".9205606, 1.1402790")
+)
+datobe # Verify
+
+plot3 <- ggplot(datobe, aes(y = Index, x = OR)) +
+    geom_point(shape = 18, size = 5) +  
+    geom_errorbarh(aes(xmin = LL, xmax = UL), height = 0.25) +
+    geom_vline(xintercept = 1, color = "red", linetype = "dashed", cex = 1, alpha = 0.5) +
+    scale_y_continuous(name = "", breaks=1:5, labels = datobe$label, trans = "reverse") +
+    xlab("Odds Ratio (95% CI)") + 
+    ylab(" ") + 
+    theme_bw() +
+    theme(panel.border = element_blank(),
+          panel.background = element_blank(),
+          panel.grid.major = element_blank(), 
+          panel.grid.minor = element_blank(), 
+          axis.line = element_line(colour = "black"),
+          axis.text.y = element_text(size = 12, colour = "black"),
+          axis.text.x.bottom = element_text(size = 12, colour = "black"),
+          axis.title.x = element_text(size = 12, colour = "black")) 
+plot3
+```
+# Correlation Plot
+```{r}
+obecor <- dplyr::select_if(usa_county_health_dichot, is.numeric)
+obeplot <- cor(obecor, use="complete.obs")
+round(obeplot, 2)        # Verify
+ggcorrplot(obeplot)      # Correlation Plot
+```
+# Logistic Regression Models 
+
+#Physical Inactivity
+```{r}
+model <- glm(obe_21 ~ pi_20, data=usa_county_health_dichot, family=binomial)
+
+#define new data frame that contains predictor variable
+newdata <- data.frame(pi_20=seq(min(usa_county_health_dichot$pi_20), max(usa_county_health_dichot$pi_20),len=500))
+
+#use fitted model to predict values of obesity
+newdata$obe_21 = predict(model, newdata, type="response")
+
+#plot logistic regression curve
+plot(obe_21 ~ pi_20, data=usa_county_health_dichot, col="steelblue")
+lines(obe_21 ~ pi_20, newdata, lwd=2)
+```
+#Access to Exercise Opportunities
+```{r}
+model <- glm(obe_21 ~ aeo_20, data=usa_county_health_dichot, family=binomial)
+
+#define new data frame that contains predictor variable
+newdata <- data.frame(aeo_20=seq(min(usa_county_health_dichot$aeo_20), max(usa_county_health_dichot$aeo_20),len=500))
+
+#use fitted model to predict values of obesity
+newdata$obe_21 = predict(model, newdata, type="response")
+
+#plot logistic regression curve
+plot(obe_21 ~ aeo_20, data=usa_county_health_dichot, col="steelblue")
+lines(obe_21 ~ aeo_20, newdata, lwd=2)
+```
+
+#Uninsured
+```{r}
+model <- glm(obe_21 ~ uni_20, data=usa_county_health_dichot, family=binomial)
+
+#define new data frame that contains predictor variable
+newdata <- data.frame(uni_20=seq(min(usa_county_health_dichot$uni_20), max(usa_county_health_dichot$uni_20),len=500))
+
+#use fitted model to predict values of obesity
+newdata$obe_21 = predict(model, newdata, type="response")
+
+#plot logistic regression curve
+plot(obe_21 ~ uni_20, data=usa_county_health_dichot, col="steelblue")
+lines(obe_21 ~ uni_20, newdata, lwd=2)
+```
+
+#Cleveland Plot Charts for Significant Associations
+```{r}
+#Obesity Rate
+ggplot(state_data, 
+       aes(x=obe_21, 
+           y=reorder(state, obe_21))) +
+    geom_point(color="blue", 
+               size = 2) +
+    geom_segment(aes(x = 40, 
+                     xend = obe_21, 
+                     y = reorder(state, obe_21), 
+                     yend = reorder(state, obe_21)),
+                 color = "lightgrey") +
+    labs (x = "Obesity Rate (%)",
+          y = "",
+          title = "Obesity Rate by State",
+          subtitle = "County Health Rankings Data - 2021") +
+    theme_minimal() + 
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank())
+
+#Physical Inactivity
+ggplot(state_data,
+      aes(x=pi_20,
+          y=reorder(state, pi_20))) +
+    geom_point(color="blue",
+               size = 2) +
+    geom_segment(aes(x = 40,
+                     xend = pi_20,
+                     y = reorder(state, pi_20),
+                     yend = reorder(state, pi_20)),
+                 color = "lightgrey") +
+    labs (x = "Physical Inactivity (%)",
+          y = "",
+          title = "Physical Inactivity by State",
+          subtitle = "County Health Rankings Data - 2020") +
+    theme_minimal() +
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank())
+
+# Access to Exercise Opportunity
+ggplot(state_data, 
+       aes(x=aeo_20, 
+           y=reorder(state, aeo_20))) +
+    geom_point(color="blue", 
+               size = 2) +
+    geom_segment(aes(x = 40, 
+                     xend = aeo_20, 
+                     y = reorder(state, aeo_20), 
+                     yend = reorder(state, aeo_20)),
+                 color = "lightgrey") +
+    labs (x = "Access to Exercise Opportunities (%)",
+          y = "",
+          title = "Access to Exercise Opportunity by State",
+          subtitle = "County Health Rankings Data - 2020") +
+    theme_minimal() + 
+    theme(panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank())
+
+#Uninsurance Rate
+ggplot(state_data, 
+         aes(x=uni_20, 
+             y=reorder(state, uni_20))) +
+      geom_point(color="blue", 
+                 size = 2) +
+      geom_segment(aes(x = 40, 
+                       xend = uni_20, 
+                       y = reorder(state, uni_20), 
+                       yend = reorder(state, uni_20)),
+                   color = "lightgrey") +
+      labs (x = "Percent of People Uninsured (%)",
+            y = "",
+            title = "Uninsurance Rate by State",
+            subtitle = "County Health Rankings Data - 2020") +
+      theme_minimal() + 
+      theme(panel.grid.major = element_blank(),
+           panel.grid.minor = element_blank())
+```
+
+#Beeswarm Plots
+```{r}
+#Establish Values
+plotdata <- county_health_data %>%
+    group_by(reg) %>%
+    summarize(n = n(),
+        mean = mean(obe_21),
+        sd = sd(obe_21),
+        se = sd / sqrt(n),
+        ci = qt(0.975, df = n - 1) * sd / sqrt(n))
+
+#Plot the Regional Data
+ggplot(county_health_data, 
+       aes(x = factor(reg,
+                      labels = c("West",
+                                 "Southwest",
+                                 "Midwest", "Southeast", "Northeast")), 
+           y = obe_21, 
+           color = reg)) +
+    geom_quasirandom(alpha = 0.7,
+                     size = 1.5) + 
+    scale_y_continuous(label = ) +
+    labs(title = "Obesity Rate by Region", 
+         subtitle = "Obesity Rate for 2021",
+         x = "",
+         y = "Obesity Rate (%)") +
+    theme_minimal() +
+    theme(legend.position = "none")
+```
